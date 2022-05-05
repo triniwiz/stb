@@ -27,12 +27,13 @@
 //! API from Rust and there is no need to pay C string conversion overhead.
 //! - You can use `stbi_no_FORMAT` feature toggles to disable not needed image formats.
 
-use stb_sys as sys;
 use std::cmp::Ordering;
 use std::ffi;
 use std::io;
 use std::os::raw;
 use std::slice;
+
+use stb_sys as sys;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq)]
@@ -57,7 +58,9 @@ pub struct Info {
 /// Holds image memory allocated by stb and responsible for calling `stbi_image_free` once dropped.
 pub struct Data<T> {
     data: *mut T,
-    size: usize,
+    info: Info,
+    desired_channels: Channels,
+    did_resize: bool,
 }
 
 impl<T> Data<T> {
@@ -70,7 +73,56 @@ impl<T> Data<T> {
 
         let size = (info.width * info.height * components) as usize;
 
-        Data { data, size }
+        Data {
+            data,
+            info,
+            desired_channels,
+            did_resize: false,
+        }
+    }
+
+
+    pub fn info(&self) -> Info{
+        self.info
+    }
+
+    #[cfg(feature = "stb_image_resize")]
+    pub fn resize(&mut self, x: i32, y: i32, desired_channels: Channels, info: Info) -> bool {
+        let width = self.info.width * x;
+        let height = self.info.height * y;
+
+        let components = if desired_channels == Channels::Default {
+            info.components
+        } else {
+            desired_channels as i32
+        };
+
+        let size = width * height * components;
+        let mut buf = vec![0_u8; size as usize];
+        let data = unsafe { slice::from_raw_parts(self.data.cast(), size as usize) };
+        let result = unsafe {
+            stb_sys::stbir_resize_uint8(
+                data.as_ptr(),
+                info.width,
+                info.height,
+                0,
+                buf.as_mut_ptr(),
+                width,
+                height,
+                0,
+                info.components,
+            )
+        };
+        if result == 0 {
+            return false;
+        }
+        self.info.width = width;
+        self.info.height = height;
+        unsafe {sys::stbi_image_free(self.data.cast())};
+        self.data = buf.as_mut_ptr().cast();
+        self.did_resize = true;
+        std::mem::forget(buf);
+        true
     }
 
     /// Returns image memory as a slice
@@ -81,7 +133,7 @@ impl<T> Data<T> {
 
     /// Returns the number of elements (which is width x height x desired_channels)
     pub fn size(&self) -> usize {
-        self.size
+        (self.info.width * self.info.height * self.info.components) as usize
     }
 }
 
@@ -94,6 +146,10 @@ impl<T: Clone> Data<T> {
 
 impl<T> Drop for Data<T> {
     fn drop(&mut self) {
+        if self.did_resize {
+            unsafe { Vec::from_raw_parts(self.data, self.size(), self.size()) };
+            return;
+        }
         unsafe { sys::stbi_image_free(self.data as *mut ffi::c_void) };
     }
 }
@@ -456,9 +512,10 @@ pub fn stbi_ldr_to_hdr_scale(scale: f32) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn fixture_path(file: &str) -> PathBuf {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

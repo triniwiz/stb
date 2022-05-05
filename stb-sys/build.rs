@@ -18,7 +18,81 @@ static FILES: &[&str] = &[
     "src/stb_truetype.c",
 ];
 
+use std::borrow::Borrow;
+use std::fmt::{self, format};
+use std::fmt::{Display, Formatter};
+
+
+#[derive(Clone, Debug)]
+pub struct Target {
+    pub architecture: String,
+    pub vendor: String,
+    pub system: String,
+    pub abi: Option<String>,
+}
+
+impl Target {
+    pub fn as_strs(&self) -> (&str, &str, &str, Option<&str>) {
+        (
+            self.architecture.as_str(),
+            self.vendor.as_str(),
+            self.system.as_str(),
+            self.abi.as_deref(),
+        )
+    }
+}
+
+impl Display for Target {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}-{}-{}",
+            &self.architecture, &self.vendor, &self.system
+        )?;
+
+        if let Some(ref abi) = self.abi {
+            write!(f, "-{}", abi)
+        } else {
+            Result::Ok(())
+        }
+    }
+}
+
+pub fn ndk() -> String {
+    std::env::var("ANDROID_NDK").expect("ANDROID_NDK variable not set")
+}
+
+pub fn target_arch(arch: &str) -> &str {
+    match arch {
+        "armv7" => "arm",
+        "aarch64" => "arm64",
+        "i686" => "x86",
+        arch => arch,
+    }
+}
+
 fn main() {
+    let target_str = std::env::var("TARGET").unwrap();
+    let target: Vec<String> = target_str.split('-').map(|s| s.into()).collect();
+    if target.len() < 3 {
+        assert!(!(target.len() < 3), "Failed to parse TARGET {}", target_str);
+    }
+
+    let abi = if target.len() > 3 {
+        Some(target[3].clone())
+    } else {
+        None
+    };
+
+    let target = Target {
+        architecture: target[0].clone(),
+        vendor: target[1].clone(),
+        system: target[2].clone(),
+        abi,
+    };
+    println!("cargo:rerun-if-changed=build.rs");
+
+
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let bindings_path = out_dir.join("bindings.rs");
 
@@ -32,16 +106,34 @@ fn main() {
     for f in FILES {
         builder = builder.header(*f)
     }
+
+    match target.system.borrow() {
+        "android" | "androideabi" => {
+            builder = builder.clang_arg(&format!("--sysroot={}/sysroot", ndk()));
+        }
+        "ios" | "darwin" => {
+            let target = std::env::var("TARGET").unwrap();
+            let directory = sdk_path(&target).ok();
+            builder = add_bindgen_root(
+                directory.as_ref().map(String::as_ref),
+                &target,
+                builder,
+            );
+        }
+        _ => {}
+    }
+
     builder
-        .whitelist_function("stb.*")
-        .whitelist_type("stb.*")
-        .whitelist_var("stb.*")
+        .allowlist_function("stb.*")
+        .allowlist_type("stb.*")
+        .allowlist_var("stb.*")
         .generate()
         .expect("Failed to generate bindings")
         .write_to_file(bindings_path)
         .expect("Failed to write bindings file");
 
     let mut builder = cc::Build::new();
+    builder.flag_if_supported("-Wno-implicit-function-declaration");
 
     #[cfg(feature = "stb_dxt")]
     {
@@ -79,5 +171,119 @@ fn main() {
         builder.define("STBI_NO_PNM", "1");
     }
 
+    match target.system.borrow() {
+        "android" | "androideabi" => {
+            builder.flag(&format!("--sysroot={}/sysroot", ndk()));
+        }
+        "ios" | "darwin" => {
+            let target = std::env::var("TARGET").unwrap();
+            let directory = sdk_path(&target).ok();
+            add_cc_root(
+                directory.as_ref().map(String::as_ref),
+                &target,
+                &mut builder,
+            );
+        }
+        _ => {}
+    }
+
     builder.files(FILES).warnings(false).compile("libstb");
+}
+
+fn sdk_path(target: &str) -> Result<String, std::io::Error> {
+    use std::process::Command;
+    let sdk = if target.contains("apple-darwin")
+        || target == "aarch64-apple-ios-macabi"
+        || target == "x86_64-apple-ios-macabi"
+    {
+        "macosx"
+    } else if target == "x86_64-apple-ios"
+        || target == "i386-apple-ios"
+        || target == "aarch64-apple-ios-sim"
+    {
+        "iphonesimulator"
+    } else if target == "aarch64-apple-ios"
+        || target == "armv7-apple-ios"
+        || target == "armv7s-apple-ios"
+    {
+        "iphoneos"
+    } else {
+        unreachable!();
+    };
+
+    let output = Command::new("xcrun")
+        .args(&["--sdk", sdk, "--show-sdk-path"])
+        .output()?
+        .stdout;
+    let prefix_str = std::str::from_utf8(&output).expect("invalid output from `xcrun`");
+    Ok(prefix_str.trim_end().to_string())
+}
+
+fn add_bindgen_root(
+    sdk_path: Option<&str>,
+    target: &str,
+    mut builder: bindgen::Builder,
+) -> bindgen::Builder {
+    println!("cargo:rerun-if-env-changed=BINDGEN_EXTRA_CLANG_ARGS");
+
+    println!("target {:?}", target);
+
+    // let build_sdk_target = if target == "aarch64-apple-ios" {
+    //     "-miphoneos-version-min=9.0"
+    // } else if target == "aarch64-apple-ios-sim" {
+    //     "-mios-simulator-version-min=14.0"
+    // } else {
+    //     "-mios-simulator-version-min=9.0"
+    // };
+
+    // builder = builder.clang_arg(build_sdk_target);
+    
+
+
+    let target = if target == "aarch64-apple-ios" || target == "x86_64-apple-ios" {
+        target.to_string()
+    } else if target == "aarch64-apple-ios-sim" {
+        "arm64-apple-ios14.0.0-simulator".to_string()
+    } else {
+        // todo support other apple targets;
+        panic!("Target not supported");
+    };
+
+   
+    builder = builder.clang_arg(format!("--target={}", target));
+
+    if let Some(sdk_path) = sdk_path {
+        builder = builder.clang_args(&["-isysroot", sdk_path]);
+    }
+
+    return builder;
+}
+
+fn add_cc_root(sdk_path: Option<&str>, target: &str, builder: &mut cc::Build) {
+    println!("cargo:rerun-if-env-changed=BINDGEN_EXTRA_CLANG_ARGS");
+
+    // let build_sdk_target = if target == "aarch64-apple-ios" {
+    //     "-miphoneos-version-min=9.0"
+    // } else if target == "aarch64-apple-ios-sim" {
+    //     "-mios-simulator-version-min=14.0"
+    // } else {
+    //     "-mios-simulator-version-min=9.0"
+    // };
+
+    // builder.flag(build_sdk_target);
+
+    let target = if target == "aarch64-apple-ios" || target == "x86_64-apple-ios" {
+        target.to_string()
+    } else if target == "aarch64-apple-ios-sim" {
+        "arm64-apple-ios14.0.0-simulator".to_string()
+    }else {
+        // todo support other apple targets;
+        panic!("Target not supported");
+    };
+   
+    builder.flag(&format!("--target={}", target));
+
+    if let Some(sdk_path) = sdk_path {
+        builder.flag(&format!("-isysroot{}", sdk_path));
+    }
 }

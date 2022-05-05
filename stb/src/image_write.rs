@@ -7,6 +7,7 @@
 //! not optimal image file size or run-time performance.
 
 use stb_sys as sys;
+use std::os::raw::c_char;
 use std::ffi::c_void;
 use std::ffi::CStr;
 use std::os::raw;
@@ -22,7 +23,7 @@ pub fn stbi_write_png(
 ) -> Option<()> {
     let ret = unsafe {
         sys::stbi_write_png(
-            filename.as_ptr() as *mut i8,
+            filename.as_ptr() as *mut c_char,
             w,
             h,
             comp,
@@ -41,7 +42,7 @@ pub fn stbi_write_png(
 pub fn stbi_write_bmp(filename: &CStr, w: i32, h: i32, comp: i32, buffer: &[u8]) -> Option<()> {
     let ret = unsafe {
         sys::stbi_write_bmp(
-            filename.as_ptr() as *mut i8,
+            filename.as_ptr(),
             w,
             h,
             comp,
@@ -59,7 +60,7 @@ pub fn stbi_write_bmp(filename: &CStr, w: i32, h: i32, comp: i32, buffer: &[u8])
 pub fn stbi_write_tga(filename: &CStr, w: i32, h: i32, comp: i32, buffer: &[u8]) -> Option<()> {
     let ret = unsafe {
         sys::stbi_write_tga(
-            filename.as_ptr() as *mut i8,
+            filename.as_ptr(),
             w,
             h,
             comp,
@@ -76,7 +77,7 @@ pub fn stbi_write_tga(filename: &CStr, w: i32, h: i32, comp: i32, buffer: &[u8])
 
 pub fn stbi_write_hdr(filename: &CStr, w: i32, h: i32, comp: i32, buffer: &[f32]) -> Option<()> {
     let ret =
-        unsafe { sys::stbi_write_hdr(filename.as_ptr() as *mut i8, w, h, comp, buffer.as_ptr()) };
+        unsafe { sys::stbi_write_hdr(filename.as_ptr() as *mut c_char, w, h, comp, buffer.as_ptr()) };
     // Each function returns 0 on failure and non-0 on success.
     if ret == 0 {
         None
@@ -95,7 +96,7 @@ pub fn stbi_write_jpg(
 ) -> Option<()> {
     let ret = unsafe {
         sys::stbi_write_jpg(
-            filename.as_ptr() as *mut i8,
+            filename.as_ptr(),
             w,
             h,
             comp,

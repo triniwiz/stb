@@ -7,8 +7,9 @@
 //! If the buffer is not large enought, quads will be truncated.
 
 use stb_sys as sys;
-use std::ffi::CStr;
+use std::ffi::{CStr};
 use std::mem::size_of;
+use std::os::raw::c_char;
 
 /// Font quad vertex.
 /// You can ignore z and color if you get them from elsewhere.
@@ -33,12 +34,12 @@ pub fn stb_easy_font_spacing(spacing: f32) {
 
 /// Takes a string and returns the horizontal size
 pub fn stb_easy_font_width(text: &CStr) -> i32 {
-    unsafe { sys::stb_easy_font_width_(text.as_ptr() as *mut i8) }
+    unsafe { sys::stb_easy_font_width_(text.as_ptr() as *mut c_char) }
 }
 
 /// Takes a string and returns the vertical size (which can vary if `text` has newlines)
 pub fn stb_easy_font_height(text: &CStr) -> i32 {
-    unsafe { sys::stb_easy_font_height_(text.as_ptr() as *mut i8) }
+    unsafe { sys::stb_easy_font_height_(text.as_ptr() as *mut c_char) }
 }
 
 /// Takes a string (which can contain '\n') and fills out a vertex buffer with renderable data to
@@ -67,7 +68,7 @@ pub fn stb_easy_font_print(
         sys::stb_easy_font_print_(
             x,
             y,
-            text.as_ptr() as *mut i8,
+            text.as_ptr() as *mut c_char,
             color,
             buffer.as_mut_ptr() as *mut std::ffi::c_void,
             buffer_size as i32,
