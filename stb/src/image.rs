@@ -125,10 +125,10 @@ impl<T> Data<T> {
 
     /// Returns the number of elements (which is width x height x desired_channels or components)
     pub fn size(&self) -> usize {
-        let components = if desired_channels == Channels::Default {
-            info.components
+        let components = if self.desired_channels == Channels::Default {
+            self.info.components
         } else {
-            desired_channels as i32
+            self.desired_channels as i32
         };
 
         (self.info.width * self.info.height * components) as usize
