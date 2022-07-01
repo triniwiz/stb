@@ -65,14 +65,6 @@ pub struct Data<T> {
 
 impl<T> Data<T> {
     fn new(data: *mut T, desired_channels: Channels, info: Info) -> Self {
-        let components = if desired_channels == Channels::Default {
-            info.components
-        } else {
-            desired_channels as i32
-        };
-
-        let size = (info.width * info.height * components) as usize;
-
         Data {
             data,
             info,
@@ -131,9 +123,15 @@ impl<T> Data<T> {
         unsafe { slice::from_raw_parts(self.data, size) }
     }
 
-    /// Returns the number of elements (which is width x height x desired_channels)
+    /// Returns the number of elements (which is width x height x desired_channels or components)
     pub fn size(&self) -> usize {
-        (self.info.width * self.info.height * self.info.components) as usize
+        let components = if desired_channels == Channels::Default {
+            info.components
+        } else {
+            desired_channels as i32
+        };
+
+        (self.info.width * self.info.height * components) as usize
     }
 }
 
