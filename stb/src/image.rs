@@ -123,7 +123,7 @@ impl<T> Data<T> {
         unsafe { slice::from_raw_parts(self.data, size) }
     }
 
-    pub fn as_mut_slice(&self) -> &[T] {
+    pub fn as_mut_slice(&self) -> &mut [T] {
         let size = self.size();
         unsafe { slice::from_raw_parts_mut(self.data, size) }
     }
