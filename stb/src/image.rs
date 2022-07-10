@@ -123,6 +123,11 @@ impl<T> Data<T> {
         unsafe { slice::from_raw_parts(self.data, size) }
     }
 
+    pub fn as_mut_slice(&self) -> &[T] {
+        let size = self.size();
+        unsafe { slice::from_raw_parts_mut(self.data, size) }
+    }
+
     /// Returns the number of elements (which is width x height x desired_channels or components)
     pub fn size(&self) -> usize {
         let components = if self.desired_channels == Channels::Default {
