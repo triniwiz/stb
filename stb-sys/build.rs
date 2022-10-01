@@ -19,7 +19,7 @@ static FILES: &[&str] = &[
 ];
 
 use std::borrow::Borrow;
-use std::fmt::{self, format};
+use std::fmt::{self};
 use std::fmt::{Display, Formatter};
 
 
@@ -299,6 +299,11 @@ fn add_cc_root(sdk_path: Option<&str>, target: &str, builder: &mut cc::Build) {
         panic!("Target not supported");
     };
 
+    if target == "x86_64-apple-ios" {
+        builder.flag("-mios-simulator-version-min=10.0");
+    }else if target == "aarch64-apple-ios" {
+        builder.flag("-miphoneos-version-min=10.0");
+    }
    
     builder.flag(&format!("--target={}", target));
 
