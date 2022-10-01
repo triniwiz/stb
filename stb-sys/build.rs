@@ -72,7 +72,7 @@ pub fn target_arch(arch: &str) -> &str {
 }
 
 fn main() {
-    let target_str = std::env::var("TARGET").unwrap();
+    let target_str = env::var("TARGET").unwrap();
     let target: Vec<String> = target_str.split('-').map(|s| s.into()).collect();
     if target.len() < 3 {
         assert!(!(target.len() < 3), "Failed to parse TARGET {}", target_str);
@@ -112,13 +112,29 @@ fn main() {
             builder = builder.clang_arg(&format!("--sysroot={}/sysroot", ndk()));
         }
         "ios" | "darwin" => {
-            let target = std::env::var("TARGET").unwrap();
-            let directory = sdk_path(&target).ok();
+
+            let system = target.system.as_str();
+            let env_target = env::var("TARGET").unwrap();
+            let directory = sdk_path(&env_target).ok();
             builder = add_bindgen_root(
                 directory.as_ref().map(String::as_ref),
-                &target,
+                &env_target,
                 builder,
             );
+
+            println!("system {:?} x abi : {:?} x arch: {:?}",system, target.abi.as_ref() , target.architecture.as_str());
+
+            if system == "ios" {
+                builder = builder.clang_arg("-miphoneos-version-min=10.0");
+
+
+                if target.abi.as_deref() == Some("sim") && target.architecture.as_str() == "aarch64" {
+                    builder = builder.clang_arg("-mios-simulator-version-min=14.0");
+                }
+
+            } else {
+                builder = builder.clang_arg("-miphoneos-version-min=14.0");
+            }
         }
         _ => {}
     }
@@ -127,6 +143,7 @@ fn main() {
         .allowlist_function("stb.*")
         .allowlist_type("stb.*")
         .allowlist_var("stb.*")
+        .clang_arg("-miphoneos-version-min=10.0")
         .generate()
         .expect("Failed to generate bindings")
         .write_to_file(bindings_path)
@@ -176,7 +193,7 @@ fn main() {
             builder.flag(&format!("--sysroot={}/sysroot", ndk()));
         }
         "ios" | "darwin" => {
-            let target = std::env::var("TARGET").unwrap();
+            let target = env::var("TARGET").unwrap();
             let directory = sdk_path(&target).ok();
             add_cc_root(
                 directory.as_ref().map(String::as_ref),
@@ -275,11 +292,13 @@ fn add_cc_root(sdk_path: Option<&str>, target: &str, builder: &mut cc::Build) {
     let target = if target == "aarch64-apple-ios" || target == "x86_64-apple-ios" {
         target.to_string()
     } else if target == "aarch64-apple-ios-sim" {
+        builder.flag("-m64");
         "arm64-apple-ios14.0.0-simulator".to_string()
     }else {
         // todo support other apple targets;
         panic!("Target not supported");
     };
+
    
     builder.flag(&format!("--target={}", target));
 
