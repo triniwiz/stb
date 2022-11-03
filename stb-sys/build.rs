@@ -53,7 +53,7 @@ impl Display for Target {
         if let Some(ref abi) = self.abi {
             write!(f, "-{}", abi)
         } else {
-            Result::Ok(())
+            Ok(())
         }
     }
 }
@@ -107,11 +107,21 @@ fn main() {
         builder = builder.header(*f)
     }
 
+   builder = builder
+        .allowlist_function("stb.*")
+        .allowlist_type("stb.*")
+        .allowlist_var("stb.*");
+
     match target.system.borrow() {
         "android" | "androideabi" => {
-            builder = builder.clang_arg(&format!("--sysroot={}/sysroot", ndk()));
+            builder = builder
+                .clang_args(&[
+                    &format!("--sysroot={}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot", ndk())
+                ]);
         }
         "ios" | "darwin" => {
+
+            builder = builder.clang_arg("-miphoneos-version-min=10.0");
 
             let system = target.system.as_str();
             let env_target = env::var("TARGET").unwrap();
@@ -121,9 +131,6 @@ fn main() {
                 &env_target,
                 builder,
             );
-
-            println!("system {:?} x abi : {:?} x arch: {:?}",system, target.abi.as_ref() , target.architecture.as_str());
-
             if system == "ios" {
                 builder = builder.clang_arg("-miphoneos-version-min=10.0");
 
@@ -135,15 +142,13 @@ fn main() {
             } else {
                 builder = builder.clang_arg("-miphoneos-version-min=14.0");
             }
+
         }
         _ => {}
     }
 
-    builder
-        .allowlist_function("stb.*")
-        .allowlist_type("stb.*")
-        .allowlist_var("stb.*")
-        .clang_arg("-miphoneos-version-min=10.0")
+
+        builder
         .generate()
         .expect("Failed to generate bindings")
         .write_to_file(bindings_path)
@@ -190,7 +195,7 @@ fn main() {
 
     match target.system.borrow() {
         "android" | "androideabi" => {
-            builder.flag(&format!("--sysroot={}/sysroot", ndk()));
+            builder.flag(&format!("--sysroot={}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot", ndk()));
         }
         "ios" | "darwin" => {
             let target = env::var("TARGET").unwrap();
