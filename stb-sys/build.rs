@@ -73,12 +73,24 @@ pub fn target_arch(arch: &str) -> &str {
 
 fn main() {
     let target_str = env::var("TARGET").unwrap();
+    let host_str = env::var("HOST").unwrap();
     let target: Vec<String> = target_str.split('-').map(|s| s.into()).collect();
     if target.len() < 3 {
         assert!(!(target.len() < 3), "Failed to parse TARGET {}", target_str);
     }
 
+    let host: Vec<String> = host_str.split('-').map(|s| s.into()).collect();
+    if host.len() < 3 {
+        assert!(!(host.len() < 3), "Failed to parse HOST {}", host_str);
+    }
+
     let abi = if target.len() > 3 {
+        Some(target[3].clone())
+    } else {
+        None
+    };
+
+    let host_abi = if target.len() > 3 {
         Some(target[3].clone())
     } else {
         None
@@ -90,8 +102,16 @@ fn main() {
         system: target[2].clone(),
         abi,
     };
-    println!("cargo:rerun-if-changed=build.rs");
 
+    let host = Target {
+        architecture: host[0].clone(),
+        vendor: host[1].clone(),
+        system: host[2].clone(),
+        abi: host_abi,
+    };
+
+
+    println!("cargo:rerun-if-changed=build.rs");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let bindings_path = out_dir.join("bindings.rs");
@@ -114,9 +134,10 @@ fn main() {
 
     match target.system.borrow() {
         "android" | "androideabi" => {
+            let host = format!("{:}-{:}", host.system.as_str(), host.architecture.as_str());
             builder = builder
                 .clang_args(&[
-                    &format!("--sysroot={}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot", ndk())
+                    &format!("--sysroot={}/toolchains/llvm/prebuilt/{}/sysroot", ndk(), host)
                 ]);
         }
         "ios" | "darwin" => {
@@ -195,7 +216,8 @@ fn main() {
 
     match target.system.borrow() {
         "android" | "androideabi" => {
-            builder.flag(&format!("--sysroot={}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot", ndk()));
+            let host = format!("{:}-{:}", host.system.as_str(), host.architecture.as_str());
+            builder.flag(&format!("--sysroot={}/toolchains/llvm/prebuilt/{}/sysroot", ndk(), host));
         }
         "ios" | "darwin" => {
             let target = env::var("TARGET").unwrap();
