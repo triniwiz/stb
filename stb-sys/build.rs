@@ -1,5 +1,6 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use regex::Regex;
 
 static FILES: &[&str] = &[
     #[cfg(feature = "stb_easy_font")]
@@ -21,6 +22,8 @@ static FILES: &[&str] = &[
 use std::borrow::Borrow;
 use std::fmt::{self};
 use std::fmt::{Display, Formatter};
+use std::fs::File;
+use std::io::Read;
 
 
 #[derive(Clone, Debug)]
@@ -71,27 +74,50 @@ pub fn target_arch(arch: &str) -> &str {
     }
 }
 
+
+fn host_tag() -> String {
+    // Because this is part of build.rs, the target_os is actually the host system
+    if cfg!(target_os = "windows") {
+        "windows-x86_64"
+    } else if cfg!(target_os = "linux") {
+        "linux-x86_64"
+    } else if cfg!(target_os = "macos") {
+        "darwin-x86_64"
+    } else {
+        panic!("host os is not supported")
+    }
+        .to_string()
+}
+
+
+/// Get NDK major version from source.properties
+fn ndk_major_version(ndk_dir: &Path) -> u32 {
+    // Capture version from the line with Pkg.Revision
+    let re = Regex::new(r"Pkg.Revision = (\d+)\.(\d+)\.(\d+)").unwrap();
+    // There's a source.properties file in the ndk directory, which contains
+    let mut source_properties =
+        File::open(ndk_dir.join("source.properties")).expect("Couldn't open source.properties");
+    let mut buf = "".to_string();
+    source_properties
+        .read_to_string(&mut buf)
+        .expect("Could not read source.properties");
+    // Capture version info
+    let captures = re
+        .captures(&buf)
+        .expect("source.properties did not match the regex");
+    // Capture 0 is the whole line of text
+    captures[1].parse().expect("could not parse major version")
+}
+
 fn main() {
     let target_str = env::var("TARGET").unwrap();
-    let host_str = env::var("HOST").unwrap();
     let target: Vec<String> = target_str.split('-').map(|s| s.into()).collect();
     if target.len() < 3 {
         assert!(!(target.len() < 3), "Failed to parse TARGET {}", target_str);
     }
 
-    let host: Vec<String> = host_str.split('-').map(|s| s.into()).collect();
-    if host.len() < 3 {
-        assert!(!(host.len() < 3), "Failed to parse HOST {}", host_str);
-    }
-
     let abi = if target.len() > 3 {
         Some(target[3].clone())
-    } else {
-        None
-    };
-
-    let host_abi = if host.len() > 3 {
-        Some(host[3].clone())
     } else {
         None
     };
@@ -102,14 +128,6 @@ fn main() {
         system: target[2].clone(),
         abi,
     };
-
-    let host = Target {
-        architecture: host[0].clone(),
-        vendor: host[1].clone(),
-        system: host[2].clone(),
-        abi: host_abi,
-    };
-
 
     println!("cargo:rerun-if-changed=build.rs");
 
@@ -134,14 +152,23 @@ fn main() {
 
     match target.system.borrow() {
         "android" | "androideabi" => {
-            let mut host = format!("{:}-{:}", host.system.as_str(), host.architecture.as_str());
-            if host.as_str() == "darwin-aarch64" {
-                host = "darwin-x86_64".to_string();
+            let ndk = ndk();
+            let major = ndk_major_version(Path::new(&ndk));
+            if major < 22 {
+                builder = builder
+                    .clang_args([
+                        &format!("--sysroot={}/sysroot", ndk),
+                        &format!(
+                            "-isystem{}/sources/cxx-stl/llvm-libc++/include",
+                            ndk
+                        )
+                    ]);
+            } else {
+                // NDK versions >= 22 have the sysroot in the llvm prebuilt by
+                let host_toolchain = format!("{}/toolchains/llvm/prebuilt/{}", ndk, host_tag());
+                // sysroot is stored in the prebuilt llvm, under the host
+                builder = builder.clang_arg(&format!("--sysroot={}/sysroot", host_toolchain));
             }
-            builder = builder
-                .clang_args(&[
-                    &format!("--sysroot={}/toolchains/llvm/prebuilt/{}/sysroot", ndk(), host)
-                ]);
         }
         "ios" | "darwin" => {
             builder = builder.clang_arg("-miphoneos-version-min=10.0");
@@ -216,12 +243,20 @@ fn main() {
 
     match target.system.borrow() {
         "android" | "androideabi" => {
-            let mut host = format!("{:}-{:}", host.system.as_str(), host.architecture.as_str());
-            if host.as_str() == "darwin-aarch64" {
-                host = "darwin-x86_64".to_string();
+            let ndk = ndk();
+            let major = ndk_major_version(Path::new(&ndk));
+            if major < 22 {
+                builder.flag(&format!("--sysroot={}/sysroot", ndk));
+                builder.flag(&format!(
+                    "-isystem{}/sources/cxx-stl/llvm-libc++/include",
+                    ndk
+                ));
+            } else {
+                // NDK versions >= 22 have the sysroot in the llvm prebuilt by
+                let host_toolchain = format!("{}/toolchains/llvm/prebuilt/{}", ndk, host_tag());
+                // sysroot is stored in the prebuilt llvm, under the host
+                builder.flag(&format!("--sysroot={}/sysroot", host_toolchain));
             }
-            println!("host {}", host.as_str());
-            builder.flag(&format!("--sysroot={}/toolchains/llvm/prebuilt/{}/sysroot", ndk(), host));
         }
         "ios" | "darwin" => {
             let target = env::var("TARGET").unwrap();
@@ -273,8 +308,6 @@ fn add_bindgen_root(
     mut builder: bindgen::Builder,
 ) -> bindgen::Builder {
     println!("cargo:rerun-if-env-changed=BINDGEN_EXTRA_CLANG_ARGS");
-
-    println!("target {:?}", target);
 
     // let build_sdk_target = if target == "aarch64-apple-ios" {
     //     "-miphoneos-version-min=9.0"

@@ -46,4 +46,6 @@ stb_truetype = []
 
 [build-dependencies]
 bindgen = {version = "0.61.0", default_features = false}
-cc = "1.0"
+cc = "1.0.37"
+
+regex = "1.4.5"
