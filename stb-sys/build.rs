@@ -3,19 +3,19 @@ use std::path::PathBuf;
 
 static FILES: &[&str] = &[
     #[cfg(feature = "stb_easy_font")]
-    "src/stb_easy_font.c",
+        "src/stb_easy_font.c",
     #[cfg(feature = "stb_dxt")]
-    "src/stb_dxt.c",
+        "src/stb_dxt.c",
     #[cfg(feature = "stb_image")]
-    "src/stb_image.c",
+        "src/stb_image.c",
     #[cfg(feature = "stb_image_write")]
-    "src/stb_image_write.c",
+        "src/stb_image_write.c",
     #[cfg(feature = "stb_rect_pack")]
-    "src/stb_rect_pack.c",
+        "src/stb_rect_pack.c",
     #[cfg(feature = "stb_image_resize")]
-    "src/stb_image_resize.c",
+        "src/stb_image_resize.c",
     #[cfg(feature = "stb_truetype")]
-    "src/stb_truetype.c",
+        "src/stb_truetype.c",
 ];
 
 use std::borrow::Borrow;
@@ -90,8 +90,8 @@ fn main() {
         None
     };
 
-    let host_abi = if target.len() > 3 {
-        Some(target[3].clone())
+    let host_abi = if host.len() > 3 {
+        Some(host[3].clone())
     } else {
         None
     };
@@ -127,21 +127,23 @@ fn main() {
         builder = builder.header(*f)
     }
 
-   builder = builder
+    builder = builder
         .allowlist_function("stb.*")
         .allowlist_type("stb.*")
         .allowlist_var("stb.*");
 
     match target.system.borrow() {
         "android" | "androideabi" => {
-            let host = format!("{:}-{:}", host.system.as_str(), host.architecture.as_str());
+            let mut host = format!("{:}-{:}", host.system.as_str(), host.architecture.as_str());
+            if host.as_str() == "darwin-aarch64" {
+                host = "darwin-x86_64".to_string();
+            }
             builder = builder
                 .clang_args(&[
                     &format!("--sysroot={}/toolchains/llvm/prebuilt/{}/sysroot", ndk(), host)
                 ]);
         }
         "ios" | "darwin" => {
-
             builder = builder.clang_arg("-miphoneos-version-min=10.0");
 
             let system = target.system.as_str();
@@ -159,17 +161,15 @@ fn main() {
                 if target.abi.as_deref() == Some("sim") && target.architecture.as_str() == "aarch64" {
                     builder = builder.clang_arg("-mios-simulator-version-min=14.0");
                 }
-
             } else {
                 builder = builder.clang_arg("-miphoneos-version-min=14.0");
             }
-
         }
         _ => {}
     }
 
 
-        builder
+    builder
         .generate()
         .expect("Failed to generate bindings")
         .write_to_file(bindings_path)
@@ -216,7 +216,11 @@ fn main() {
 
     match target.system.borrow() {
         "android" | "androideabi" => {
-            let host = format!("{:}-{:}", host.system.as_str(), host.architecture.as_str());
+            let mut host = format!("{:}-{:}", host.system.as_str(), host.architecture.as_str());
+            if host.as_str() == "darwin-aarch64" {
+                host = "darwin-x86_64".to_string();
+            }
+            println!("host {}", host.as_str());
             builder.flag(&format!("--sysroot={}/toolchains/llvm/prebuilt/{}/sysroot", ndk(), host));
         }
         "ios" | "darwin" => {
@@ -281,7 +285,6 @@ fn add_bindgen_root(
     // };
 
     // builder = builder.clang_arg(build_sdk_target);
-    
 
 
     let target = if target == "aarch64-apple-ios" || target == "x86_64-apple-ios" {
@@ -293,7 +296,7 @@ fn add_bindgen_root(
         panic!("Target not supported");
     };
 
-   
+
     builder = builder.clang_arg(format!("--target={}", target));
 
     if let Some(sdk_path) = sdk_path {
@@ -321,17 +324,17 @@ fn add_cc_root(sdk_path: Option<&str>, target: &str, builder: &mut cc::Build) {
     } else if target == "aarch64-apple-ios-sim" {
         builder.flag("-m64");
         "arm64-apple-ios14.0.0-simulator".to_string()
-    }else {
+    } else {
         // todo support other apple targets;
         panic!("Target not supported");
     };
 
     if target == "x86_64-apple-ios" {
         builder.flag("-mios-simulator-version-min=10.0");
-    }else if target == "aarch64-apple-ios" {
+    } else if target == "aarch64-apple-ios" {
         builder.flag("-miphoneos-version-min=10.0");
     }
-   
+
     builder.flag(&format!("--target={}", target));
 
     if let Some(sdk_path) = sdk_path {
