@@ -1,5 +1,11 @@
+use std::borrow::Borrow;
 use std::env;
+use std::fmt::{self};
+use std::fmt::{Display, Formatter};
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+
 use regex::Regex;
 
 static FILES: &[&str] = &[
@@ -18,13 +24,6 @@ static FILES: &[&str] = &[
     #[cfg(feature = "stb_truetype")]
         "src/stb_truetype.c",
 ];
-
-use std::borrow::Borrow;
-use std::fmt::{self};
-use std::fmt::{Display, Formatter};
-use std::fs::File;
-use std::io::Read;
-
 
 #[derive(Clone, Debug)]
 pub struct Target {
@@ -318,19 +317,21 @@ fn add_bindgen_root(
     // };
 
     // builder = builder.clang_arg(build_sdk_target);
-
+    
 
     let target = if target == "aarch64-apple-ios" || target == "x86_64-apple-ios" {
-        target.to_string()
+        Some(target.to_string())
     } else if target == "aarch64-apple-ios-sim" {
-        "arm64-apple-ios14.0.0-simulator".to_string()
+        Some("arm64-apple-ios14.0.0-simulator".to_string())
     } else {
-        // todo support other apple targets;
-        panic!("Target not supported");
+        None
     };
 
 
-    builder = builder.clang_arg(format!("--target={}", target));
+    if let Some(target) = target {
+        builder = builder.clang_arg(format!("--target={}", target));
+    }
+
 
     if let Some(sdk_path) = sdk_path {
         builder = builder.clang_args(&["-isysroot", sdk_path]);
@@ -353,22 +354,23 @@ fn add_cc_root(sdk_path: Option<&str>, target: &str, builder: &mut cc::Build) {
     // builder.flag(build_sdk_target);
 
     let target = if target == "aarch64-apple-ios" || target == "x86_64-apple-ios" {
-        target.to_string()
+        Some(target.to_string())
     } else if target == "aarch64-apple-ios-sim" {
         builder.flag("-m64");
-        "arm64-apple-ios14.0.0-simulator".to_string()
+        Some("arm64-apple-ios14.0.0-simulator".to_string())
     } else {
-        // todo support other apple targets;
-        panic!("Target not supported");
+        None
     };
 
-    if target == "x86_64-apple-ios" {
-        builder.flag("-mios-simulator-version-min=10.0");
-    } else if target == "aarch64-apple-ios" {
-        builder.flag("-miphoneos-version-min=10.0");
-    }
+    if let Some(target) = target {
+        if target == "x86_64-apple-ios" {
+            builder.flag("-mios-simulator-version-min=10.0");
+        } else if target == "aarch64-apple-ios" {
+            builder.flag("-miphoneos-version-min=10.0");
+        }
 
-    builder.flag(&format!("--target={}", target));
+        builder.flag(&format!("--target={}", target));
+    }
 
     if let Some(sdk_path) = sdk_path {
         builder.flag(&format!("-isysroot{}", sdk_path));
